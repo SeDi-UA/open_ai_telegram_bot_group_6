@@ -1,6 +1,8 @@
 from openai import OpenAI
 import httpx
 
+from src.config import PROXY
+
 
 class ChatGPTService:
     client: OpenAI = None
@@ -8,7 +10,8 @@ class ChatGPTService:
 
     def __init__(self, token):
         self.client = OpenAI(
-            http_client=httpx.Client(proxy="http://18.199.183.77:49232"),
+            # http_client=httpx.Client(proxy="http://18.199.183.77:49232"),
+            http_client=httpx.Client(proxy=PROXY),
             api_key=token
         )
         self.message_list = []
