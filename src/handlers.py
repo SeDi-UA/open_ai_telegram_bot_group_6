@@ -1,12 +1,13 @@
 import logging
 from random import choice
 
-from telegram import Update
-from telegram.ext import ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 
-from config import CHATGPT_TOKEN
+from config import CHATGPT_TOKEN, TRANSLATE_BUTTONS, States
 from gpt import ChatGPTService
-from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons)
+from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons,
+                   translator, get_country_name)
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_image(update, context, "start")
-    await send_text(update, context, load_message("start"))
+    await send_text(update, context, load_message("start"), ReplyKeyboardRemove())
     await show_main_menu(
         update,
         context,
@@ -28,8 +29,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'random': 'Дізнатися випадковий факт',
             'gpt': 'Запитати ChatGPT',
             'talk': 'Діалог з відомою особистістю',
+            'translate': 'Переклад на обрану мову'
         }
     )
+    return ConversationHandler.END
 
 
 async def random(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,7 +119,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not conversation_state:
         intent_recognized = await inter_random_input(update, context, message_text)
         if not intent_recognized:
-            await show_funny_response(update, context)
+            await show_funny_response(update)
         return
 
 
@@ -191,7 +194,7 @@ async def inter_random_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     return False
 
 
-async def show_funny_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_funny_response(update: Update):
     funny_responses = [
         "Хмм... Цікаво, але я не зрозумів, що саме ви хочете. Може спробуєте одну з команд з меню?",
         "Дуже цікаве повідомлення! Але мені потрібні чіткіші інструкції. Ось доступні команди:",
@@ -211,3 +214,59 @@ async def show_funny_response(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     full_message = f"{random_response}\n{available_commands}"
     await update.message.reply_text(full_message)
+
+
+async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await send_image(update, context, "translate")
+    reply_markup = ReplyKeyboardMarkup(TRANSLATE_BUTTONS, resize_keyboard=True)
+    await update.message.reply_text("Оберіть мову, на яку потрібно перекласти:",reply_markup=reply_markup)
+    return States.CHOOSING_LANGUAGE
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await start(update, context)
+
+
+async def select_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lang_code = update.message.text
+    if lang_code == "Закінчити":
+        return await start(update, context)
+    lang = get_country_name(lang_code)
+    context.user_data['target_lang_code'] = lang_code
+    await update.message.reply_text(
+        f"Ви обрали мову {lang} {lang_code}.\nНапишіть текст, який необхідно перекласти:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return States.TYPING_TEXT
+
+
+async def tran_proc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_to_delete = await send_text(update, context, "Перекладаю ⏳ ...")
+    try:
+        text_to_tran = update.message.text
+        target_lang_code = context.user_data.get('target_lang_code')
+        target_lang = get_country_name(target_lang_code)
+        translated_text = await translator(chatgpt_service, text_to_tran, target_lang, target_lang_code)
+        buttons_plus_cancel = TRANSLATE_BUTTONS + [['Закінчити']]
+        reply_markup = ReplyKeyboardMarkup(buttons_plus_cancel, resize_keyboard=True)
+        await update.message.reply_text(translated_text, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Помилка в обробнику /random: {e}")
+        await send_text(update, context, "Помилка при отриманні випадкового факту.")
+    finally:
+        await context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=message_to_delete.message_id
+        )
+    return States.CHOOSING_LANGUAGE
+
+
+translate = ConversationHandler(
+        entry_points=[CommandHandler("translate", translate)],
+        states={
+            States.CHOOSING_LANGUAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_lang)],
+            States.TYPING_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, tran_proc)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )

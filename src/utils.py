@@ -1,4 +1,5 @@
 import os
+import pycountry
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram import (Update, BotCommand, BotCommandScopeChat, MenuButtonCommands, InlineKeyboardButton,
@@ -12,12 +13,13 @@ def load_message(name: str) -> str:
         return file.read()
 
 
-async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None):
     text = text.encode('utf8').decode('utf8')
     return await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=text,
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
     )
 
 
@@ -66,3 +68,28 @@ async def send_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         reply_markup=reply_markup,
         message_thread_id=update.effective_message.message_thread_id
     )
+
+
+def get_flag(country_code):
+    offset = 127397
+    return "".join(chr(ord(char.upper()) + offset) for char in country_code)
+
+
+def get_alpha2(emoji):
+    return ''.join(chr(ord(c) - 127397) for c in emoji)
+
+
+async def translator(service, text, lang, flag):
+    result = await service.add_message(
+        message_text=f"Переклади наступний текст на {lang}. Поверни ТІЛЬКИ переклад без зайвих пояснень:\n{text}"
+    )
+    result = f"✅ {lang} {flag}:\n\n{result}"
+    return result
+
+
+def get_country_name(code):
+    try:
+        country = pycountry.countries.get(alpha_2=get_alpha2(code))
+        return country.name
+    except AttributeError:
+        return "<Невідома країна>"
