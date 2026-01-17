@@ -208,3 +208,9 @@ __marimo__/
 
 
 .idea/
+
+*.sqlite
+*.db
+*.db-journal
+*.db-shm
+*.db-wal

@@ -2,9 +2,12 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 from config import BOT_TOKEN
-from handlers import start, random, random_button, gpt, message_handler, talk, talk_button, translate
+from handlers import (start, random, random_button, gpt, message_handler, talk, talk_button,
+                      tran_conv_handler, recom_conv_handler)
 
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+from db import init_db
+
+app = ApplicationBuilder().token(BOT_TOKEN).post_init(init_db).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("random", random))
 app.add_handler(CommandHandler("gpt", gpt))
@@ -16,8 +19,8 @@ app.add_handler(
         pattern='^(talk_linus_torvalds|talk_guido_van_rossum|talk_mark_zuckerberg)$'
     )
 )
-app.add_handler(translate)
-# app.add_handler(CommandHandler("talk", talk))
+app.add_handler(tran_conv_handler)
+app.add_handler(recom_conv_handler)
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
 app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
